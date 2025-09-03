@@ -28,8 +28,8 @@ async function loadConfig() {
   try {
     // Placeholder: Replace with fetch('config.json')
     config = await Promise.resolve({
-      cogSvcRegion: "eastus2",
-      cogSvcSubKey: "Cz4BbPc7lZ9XlsBO0qUVgqLsvmoSa1Nq4dgoxmAurG7lFgVubdyTJQQJ99BHACHYHv6XJ3w3AAAAACOGowZU",
+      cogSvcRegion: "",
+      cogSvcSubKey: "",
       talkingAvatarCharacter: "lisa",
       talkingAvatarStyle: "casual-sitting",
       ttsVoice: "en-US-JennyNeural",
@@ -360,7 +360,7 @@ function handleUserQuery(userQuery) {
   }
 
   console.log("Sending request to /ask_agent...");
-  fetch("http://localhost:8000/ask_agent", {
+  fetch("https://avatar-v4ja.onrender.com/ask_agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
