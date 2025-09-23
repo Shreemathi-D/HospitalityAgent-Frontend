@@ -834,51 +834,74 @@
   </div>
 
   <script>
-    // Toggle sidebar functionality
-    function toggleSidebar() {
-      const appContainer = document.querySelector('.app-container');
-      const sidebarIcon = document.getElementById('sidebarToggleIcon');
-      
-      if (appContainer.classList.contains('sidebar-collapsed')) {
-        appContainer.classList.remove('sidebar-collapsed');
-        sidebarIcon.textContent = '✕';
-      } else {
-        appContainer.classList.add('sidebar-collapsed');
-        sidebarIcon.textContent = '☰';
-      }
-    }
+document.addEventListener('DOMContentLoaded', () => {
 
-    // Session state management for logo
-    function handleSessionStart() {
-      const avatarVideo = document.getElementById('remoteVideo');
-      avatarVideo.classList.add('session-active');
-    }
+  // -----------------------------
+  // Sidebar toggle functionality
+  // -----------------------------
+  function toggleSidebar() {
+    const appContainer = document.querySelector('.app-container');
+    const sidebarIcon = document.getElementById('sidebarToggleIcon');
 
-    function handleSessionEnd() {
-      const avatarVideo = document.getElementById('remoteVideo');
-      avatarVideo.classList.remove('session-active');
+    if (appContainer.classList.contains('sidebar-collapsed')) {
+      appContainer.classList.remove('sidebar-collapsed');
+      sidebarIcon.textContent = '✕';
+    } else {
+      appContainer.classList.add('sidebar-collapsed');
+      sidebarIcon.textContent = '☰';
     }
+  }
 
-    // Override existing functions to include logo management
+  // Make toggleSidebar global so buttons can call it
+  window.toggleSidebar = toggleSidebar;
+
+  // -----------------------------
+  // Avatar session management
+  // -----------------------------
+  function handleSessionStart() {
+    const avatarVideo = document.getElementById('remoteVideo');
+    if (avatarVideo) avatarVideo.classList.add('session-active');
+  }
+
+  function handleSessionEnd() {
+    const avatarVideo = document.getElementById('remoteVideo');
+    if (avatarVideo) avatarVideo.classList.remove('session-active');
+  }
+
+  // -----------------------------
+  // Safe overrides for start/stop session
+  // -----------------------------
+  if (typeof window.startSession === 'function') {
     const originalStartSession = window.startSession;
+    window.startSession = function() {
+      handleSessionStart();
+      return originalStartSession.apply(this, arguments);
+    };
+  }
+
+  if (typeof window.stopSession === 'function') {
     const originalStopSession = window.stopSession;
+    window.stopSession = function() {
+      handleSessionEnd();
+      return originalStopSession.apply(this, arguments);
+    };
+  }
 
-    if (originalStartSession) {
-      window.startSession = function() {
-        handleSessionStart();
-        return originalStartSession.apply(this, arguments);
-      };
-    }
+  // -----------------------------
+  // Optional: global stopSpeaking function if not defined
+  // -----------------------------
+  if (typeof window.stopSpeaking !== 'function') {
+    window.stopSpeaking = function() {
+      console.warn('stopSpeaking() is not implemented yet.');
+    };
+  }
 
-    if (originalStopSession) {
-      window.stopSession = function() {
-        handleSessionEnd();
-        return originalStopSession.apply(this, arguments);
-      };
-    }
-  </script>
+});
+</script>
+
 </body>
 </html>
+
 
 
 
