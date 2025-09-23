@@ -249,7 +249,7 @@ function setupWebRTC(iceServerUrl, iceServerUsername, iceServerCredential) {
   });
 }
 
-// === Messages & Speech functions ===
+// Initialize messages
 function initMessages() {
   messages = [{
     role: 'system',
@@ -257,6 +257,7 @@ function initMessages() {
   }];
 }
 
+// HTML encode text
 function htmlEncode(text) {
   const entityMap = {
     '&': '&amp;',
@@ -269,6 +270,7 @@ function htmlEncode(text) {
   return String(text).replace(/[&<>"'\/]/g, match => entityMap[match]);
 }
 
+// Speak text
 function speak(text, endingSilenceMs = 0) {
   if (isSpeaking) {
     spokenTextQueue.push(text);
@@ -332,7 +334,6 @@ function stopSpeaking() {
   });
 }
 
-// === User query handling ===
 function handleUserQuery(userQuery) {
   console.log("Handling user query:", userQuery);
   if (!sessionActive) {
@@ -429,7 +430,6 @@ function handleUserQuery(userQuery) {
   });
 }
 
-// === Hung session checker ===
 function checkHung() {
   let videoElement = document.getElementById('videoPlayer');
   if (videoElement && sessionActive) {
@@ -451,18 +451,29 @@ function checkHung() {
   }
 }
 
-// === UI toggles ===
 function toggleChat() {
+  // const panel = document.getElementById("chatHistoryPanel");
+  // const toggleBtn = document.getElementById("toggleChat");
+
+  // if (panel.style.display === "none" || panel.style.display === "") {
+  //   panel.style.display = "block";
+  //   toggleBtn.textContent = "📝 Hide Transcriptions";
+  // } else {
+  //   panel.style.display = "none";
+  //   toggleBtn.textContent = "📝 Show Transcriptions";
+  // }
   const panel = document.getElementById("chatHistoryPanel");
-  const toggleBtn = document.getElementById("toggleChat");
-  if (panel.style.display === "none" || panel.style.display === "") {
-    panel.style.display = "block";
-    toggleBtn.textContent = "📝 Hide Transcriptions";
-  } else {
-    panel.style.display = "none";
-    toggleBtn.textContent = "📝 Show Transcriptions";
-  }
+ const toggleBtn = document.getElementById("toggleChat");
+ if (panel.style.display === "none" || panel.style.display === "") {
+   panel.style.display = "block";
+   toggleBtn.textContent = "📝 Hide Transcriptions";
+ } else {
+   panel.style.display = "none";
+   toggleBtn.textContent = "📝 Show Transcriptions";
+ }
 }
+
+
 
 function showLiveCaption(text) {
   const captionDiv = document.getElementById("liveCaption");
@@ -475,22 +486,23 @@ function showLiveCaption(text) {
   }, 4000);
 }
 
-// === Window events ===
+
 window.onload = async () => {
   await loadConfig();
   setInterval(checkHung, 2000);
   document.getElementById('userMessageBox').addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') {
-      const userQuery = document.getElementById('userMessageBox').value.trim();
-      if (userQuery) {
-        const transcriptionDiv = document.getElementById("transcriptionText");
-        transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-        transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-        handleUserQuery(userQuery);
-        document.getElementById('userMessageBox').value = '';
-      }
-    }
-  });
+ if (e.key === 'Enter') {
+   const userQuery = document.getElementById('userMessageBox').value.trim();
+   if (userQuery) {
+     // append USER typed text into transcription panel
+     const transcriptionDiv = document.getElementById("transcriptionText");
+     transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+     transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+     handleUserQuery(userQuery);
+     document.getElementById('userMessageBox').value = '';
+   }
+ }
+});
 };
 
 window.startSession = () => {
@@ -511,84 +523,182 @@ window.stopSession = () => {
   disconnectAvatar();
 };
 
-// === Teams SDK microphone integration ===
+// window.microphone = () => {
+//   lastInteractionTime = new Date();
+//   if (document.getElementById('microphone').innerHTML === 'Stop Microphone') {
+//     speechRecognizer.stopContinuousRecognitionAsync(() => {
+//       document.getElementById('microphone').innerHTML = 'Start Microphone';
+//       document.getElementById('microphone').disabled = false;
+//     }, (err) => {
+//       console.error("Failed to stop recognition:", err);
+//       document.getElementById('microphone').disabled = false;
+//     });
+//     return;
+//   }
+
+//   document.getElementById('microphone').disabled = true;
+//   speechRecognizer.startContinuousRecognitionAsync(() => {
+//     document.getElementById('microphone').innerHTML = 'Stop Microphone';
+//     document.getElementById('microphone').disabled = false;
+//   }, (err) => {
+//     console.error("Failed to start recognition:", err);
+//     document.getElementById('microphone').disabled = false;
+//   });
+
+//   speechRecognizer.recognized = async (s, e) => {
+//     if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+//       let userQuery = e.result.text.trim();
+//       if (userQuery) {
+//         handleUserQuery(userQuery);
+//       }
+//     }
+//   };
+// };
+// Toggle transcription panel
 window.microphone = () => {
   lastInteractionTime = new Date();
 
   const micButton = document.getElementById('microphone');
 
-  // Check if Teams SDK is available
-  const teamsSDK = window.microsoftTeams || null;
-  if (teamsSDK) {
-    // Initialize Teams SDK if not already
-    teamsSDK.app.initialize();
-  }
-
   if (micButton.innerHTML === 'Stop Microphone') {
     // Stop microphone
-    if (teamsSDK) {
-      // Teams SDK microphone stop logic (if applicable)
-      console.log("Stopping Teams microphone...");
-      // Add Teams SDK-specific stop code here if needed
-    }
-
-    if (speechRecognizer) {
-      speechRecognizer.stopContinuousRecognitionAsync(() => {
-        micButton.innerHTML = '🎤 Mic';
-        micButton.disabled = false;
-      }, (err) => {
-        console.error("Failed to stop recognition:", err);
-        micButton.disabled = false;
-      });
-    }
-
+    speechRecognizer.stopContinuousRecognitionAsync(() => {
+      micButton.innerHTML = '🎤 Mic';
+      micButton.disabled = false;
+    }, (err) => {
+      console.error("Failed to stop recognition:", err);
+      micButton.disabled = false;
+    });
     return;
   }
 
   micButton.disabled = true;
 
-  if (teamsSDK) {
-    console.log("Starting Teams microphone...");
-    // Add Teams SDK-specific start code if available
-    // For now, we still rely on Azure SpeechRecognizer
-  }
-
   // Start continuous recognition
-  if (speechRecognizer) {
-    speechRecognizer.startContinuousRecognitionAsync(() => {
-      micButton.innerHTML = 'Stop Microphone';
-      micButton.disabled = false;
-    }, (err) => {
-      console.error("Failed to start recognition:", err);
-      micButton.disabled = false;
-    });
+  speechRecognizer.startContinuousRecognitionAsync(() => {
+    micButton.innerHTML = 'Stop Microphone';
+    micButton.disabled = false;
+  }, (err) => {
+    console.error("Failed to start recognition:", err);
+    micButton.disabled = false;
+  });
 
-    // On recognized (final speech result)
-    speechRecognizer.recognized = async (s, e) => {
-      if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-        let userQuery = e.result.text.trim();
-        if (userQuery) {
-          // Auto-stop avatar speech when user speaks
-          if (isSpeaking) {
-            console.log("User started speaking - stopping avatar speech...");
-            stopSpeaking();
-          }
-
-          // Append user text to transcription panel
-          const transcriptionDiv = document.getElementById("transcriptionText");
-          transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-          transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-
-          // Send to agent
-          handleUserQuery(userQuery);
+  // On recognized (final speech result)
+  speechRecognizer.recognized = async (s, e) => {
+    if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+      let userQuery = e.result.text.trim();
+      if (userQuery) {
+        // ✅ AUTO-STOP avatar speech when user speaks
+        if (isSpeaking) {
+          console.log("User started speaking - stopping avatar speech...");
+          stopSpeaking();
         }
+
+        // Append user text to transcription panel
+        const transcriptionDiv = document.getElementById("transcriptionText");
+        transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+        transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+
+        // Send to agent
+        handleUserQuery(userQuery);
       }
-    };
-  } else {
-    console.warn("SpeechRecognizer not initialized. Microphone will not work.");
-  }
+    }
+  };
 };
 
 
+function toggleChat() {
 
+  const panel = document.getElementById("chatHistoryPanel");
+
+  const toggleBtn = document.getElementById("toggleChat");
+
+  if (panel.style.display === "none" || panel.style.display === "") {
+
+    panel.style.display = "block";
+
+    toggleBtn.textContent = "📝 Hide Transcriptions";
+
+  } else {
+
+    panel.style.display = "none";
+
+    toggleBtn.textContent = "📝 Show Transcriptions";
+
+  }
+
+}
+
+window.microphone = () => {
+
+  lastInteractionTime = new Date();
+
+  if (document.getElementById('microphone').innerHTML === 'Stop Microphone') {
+
+    // Stop microphone
+
+    speechRecognizer.stopContinuousRecognitionAsync(() => {
+
+      document.getElementById('microphone').innerHTML = '🎤 Mic';
+
+      document.getElementById('microphone').disabled = false;
+
+    }, (err) => {
+
+      console.error("Failed to stop recognition:", err);
+
+      document.getElementById('microphone').disabled = false;
+
+    });
+
+    return;
+
+  }
+
+  document.getElementById('microphone').disabled = true;
+
+  // Start continuous recognition
+
+  speechRecognizer.startContinuousRecognitionAsync(() => {
+
+    document.getElementById('microphone').innerHTML = 'Stop Microphone';
+
+    document.getElementById('microphone').disabled = false;
+
+  }, (err) => {
+
+    console.error("Failed to start recognition:", err);
+
+    document.getElementById('microphone').disabled = false;
+
+  });
+
+  speechRecognizer.recognized = async (s, e) => {
+
+    if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+
+      let userQuery = e.result.text.trim();
+
+      if (userQuery) {
+
+        // 👉 append the transcription
+
+        const transcriptionDiv = document.getElementById("transcriptionText");
+
+        transcriptionDiv.innerHTML += `<div><b>User:</b>${htmlEncode(userQuery)}<br></div><br>`;
+
+        transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+
+        // send to agent
+
+        handleUserQuery(userQuery);
+
+      }
+
+    }
+
+  };
+
+};
+ 
 window.stopSpeaking = stopSpeaking;
