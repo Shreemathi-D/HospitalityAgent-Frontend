@@ -513,90 +513,82 @@ window.stopSession = () => {
 
 // === Teams SDK microphone integration ===
 window.microphone = () => {
-    lastInteractionTime = new Date();
-    const micButton = document.getElementById('microphone');
+  lastInteractionTime = new Date();
 
-    // Detect Teams SDK
-    const teamsSDK = window.microsoftTeams || null;
+  const micButton = document.getElementById('microphone');
 
-    // Fallback handler for default browser microphone
-    const defaultMicrophoneHandler = () => {
-        if (micButton.innerHTML === 'Stop Microphone') {
-            speechRecognizer.stopContinuousRecognitionAsync(() => {
-                micButton.innerHTML = '🎤 Mic';
-                micButton.disabled = false;
-            }, (err) => {
-                console.error("Failed to stop recognition:", err);
-                micButton.disabled = false;
-            });
-            return;
-        }
+  // Check if Teams SDK is available
+  const teamsSDK = window.microsoftTeams || null;
+  if (teamsSDK) {
+    // Initialize Teams SDK if not already
+    teamsSDK.app.initialize();
+  }
 
-        micButton.disabled = true;
-        speechRecognizer.startContinuousRecognitionAsync(() => {
-            micButton.innerHTML = 'Stop Microphone';
-            micButton.disabled = false;
-        }, (err) => {
-            console.error("Failed to start recognition:", err);
-            micButton.disabled = false;
-        });
-
-        speechRecognizer.recognized = async (s, e) => {
-            if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-                let userQuery = e.result.text.trim();
-                if (userQuery) {
-                    if (isSpeaking) stopSpeaking();
-                    const transcriptionDiv = document.getElementById("transcriptionText");
-                    transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-                    transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-                    handleUserQuery(userQuery);
-                }
-            }
-        };
-    };
-
-    // If Teams SDK is not loaded, use default
-    if (!teamsSDK) {
-        console.warn("Teams SDK not loaded, using default microphone behavior.");
-        defaultMicrophoneHandler();
-        return;
+  if (micButton.innerHTML === 'Stop Microphone') {
+    // Stop microphone
+    if (teamsSDK) {
+      // Teams SDK microphone stop logic (if applicable)
+      console.log("Stopping Teams microphone...");
+      // Add Teams SDK-specific stop code here if needed
     }
 
-    // Teams SDK microphone handling
-    if (micButton.innerHTML === 'Stop Microphone') {
-        teamsSDK.audio.stopMicrophoneAsync().then(() => {
-            micButton.innerHTML = '🎤 Mic';
-            micButton.disabled = false;
-        }).catch(err => {
-            console.error("Teams stop microphone error:", err);
-            micButton.disabled = false;
-        });
-        return;
+    if (speechRecognizer) {
+      speechRecognizer.stopContinuousRecognitionAsync(() => {
+        micButton.innerHTML = '🎤 Mic';
+        micButton.disabled = false;
+      }, (err) => {
+        console.error("Failed to stop recognition:", err);
+        micButton.disabled = false;
+      });
     }
 
-    micButton.disabled = true;
-    teamsSDK.audio.startMicrophoneAsync().then(() => {
-        micButton.innerHTML = 'Stop Microphone';
-        micButton.disabled = false;
-    }).catch(err => {
-        console.error("Teams start microphone error:", err);
-        micButton.disabled = false;
+    return;
+  }
+
+  micButton.disabled = true;
+
+  if (teamsSDK) {
+    console.log("Starting Teams microphone...");
+    // Add Teams SDK-specific start code if available
+    // For now, we still rely on Azure SpeechRecognizer
+  }
+
+  // Start continuous recognition
+  if (speechRecognizer) {
+    speechRecognizer.startContinuousRecognitionAsync(() => {
+      micButton.innerHTML = 'Stop Microphone';
+      micButton.disabled = false;
+    }, (err) => {
+      console.error("Failed to start recognition:", err);
+      micButton.disabled = false;
     });
 
-    // Use your original Speech SDK recognizer for processing user speech
+    // On recognized (final speech result)
     speechRecognizer.recognized = async (s, e) => {
-        if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-            let userQuery = e.result.text.trim();
-            if (userQuery) {
-                if (isSpeaking) stopSpeaking();
-                const transcriptionDiv = document.getElementById("transcriptionText");
-                transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-                transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-                handleUserQuery(userQuery);
-            }
+      if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+        let userQuery = e.result.text.trim();
+        if (userQuery) {
+          // Auto-stop avatar speech when user speaks
+          if (isSpeaking) {
+            console.log("User started speaking - stopping avatar speech...");
+            stopSpeaking();
+          }
+
+          // Append user text to transcription panel
+          const transcriptionDiv = document.getElementById("transcriptionText");
+          transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+          transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+
+          // Send to agent
+          handleUserQuery(userQuery);
         }
+      }
     };
+  } else {
+    console.warn("SpeechRecognizer not initialized. Microphone will not work.");
+  }
 };
+
 
 
 window.stopSpeaking = stopSpeaking;
