@@ -86,9 +86,11 @@ async function connectAvatar() {
     // =======================
     const speechConfig = {
       directLine: {
-        secret: directLineSpeechKey,
-        region: directLineRegion
+        secret: config.directLineSpeechKey,
+        region: config.directLineRegion
       }
+    };
+
     };
 
     avatarSynthesizer = WebChat.createDirectLineSpeechAdapter(speechConfig);
