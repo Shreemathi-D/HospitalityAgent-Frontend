@@ -34,8 +34,8 @@ async function loadConfig() {
       talkingAvatarStyle: "casual-sitting",
       ttsVoice: "en-US-JennyNeural",
       sttLocales: ["en-US"],
-      directLineSpeechKey = "BdsHeJgHXOgRmX3aSdDpRKbR5ut2FGtO7XklHXHQGtQNJvtugeTUJQQJ99BIAC77bzfAArohAAABAZBSFkZS.4zTM1t4fLmDFwoHeddVrAB5GoameRdCZ3e8td13meMkLDwNa4pXeJQQJ99BIAC77bzfAArohAAABAZBS2JZW",
-      directLineRegion = "eastus2", 
+      directLineSpeechKey: "BdsHeJgHXOgRmX3aSdDpRKbR5ut2FGtO7XklHXHQGtQNJvtugeTUJQQJ99BIAC77bzfAArohAAABAZBSFkZS.4zTM1t4fLmDFwoHeddVrAB5GoameRdCZ3e8td13meMkLDwNa4pXeJQQJ99BIAC77bzfAArohAAABAZBS2JZW",
+      directLineRegion: "eastus2", 
       systemPrompt: "You are a helpful assistant."
     });
     console.log("Configuration loaded:", config);
