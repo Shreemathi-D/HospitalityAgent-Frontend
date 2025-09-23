@@ -513,43 +513,90 @@ window.stopSession = () => {
 
 // === Teams SDK microphone integration ===
 window.microphone = () => {
-  lastInteractionTime = new Date();
-  const micButton = document.getElementById('microphone');
+    lastInteractionTime = new Date();
+    const micButton = document.getElementById('microphone');
 
-  if (micButton.innerHTML === 'Stop Microphone') {
-    teamsSDK.stopMicrophone()
-      .then(() => {
-        micButton.innerHTML = '🎤 Mic';
+    // Detect Teams SDK
+    const teamsSDK = window.microsoftTeams || null;
+
+    // Fallback handler for default browser microphone
+    const defaultMicrophoneHandler = () => {
+        if (micButton.innerHTML === 'Stop Microphone') {
+            speechRecognizer.stopContinuousRecognitionAsync(() => {
+                micButton.innerHTML = '🎤 Mic';
+                micButton.disabled = false;
+            }, (err) => {
+                console.error("Failed to stop recognition:", err);
+                micButton.disabled = false;
+            });
+            return;
+        }
+
+        micButton.disabled = true;
+        speechRecognizer.startContinuousRecognitionAsync(() => {
+            micButton.innerHTML = 'Stop Microphone';
+            micButton.disabled = false;
+        }, (err) => {
+            console.error("Failed to start recognition:", err);
+            micButton.disabled = false;
+        });
+
+        speechRecognizer.recognized = async (s, e) => {
+            if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+                let userQuery = e.result.text.trim();
+                if (userQuery) {
+                    if (isSpeaking) stopSpeaking();
+                    const transcriptionDiv = document.getElementById("transcriptionText");
+                    transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+                    transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+                    handleUserQuery(userQuery);
+                }
+            }
+        };
+    };
+
+    // If Teams SDK is not loaded, use default
+    if (!teamsSDK) {
+        console.warn("Teams SDK not loaded, using default microphone behavior.");
+        defaultMicrophoneHandler();
+        return;
+    }
+
+    // Teams SDK microphone handling
+    if (micButton.innerHTML === 'Stop Microphone') {
+        teamsSDK.audio.stopMicrophoneAsync().then(() => {
+            micButton.innerHTML = '🎤 Mic';
+            micButton.disabled = false;
+        }).catch(err => {
+            console.error("Teams stop microphone error:", err);
+            micButton.disabled = false;
+        });
+        return;
+    }
+
+    micButton.disabled = true;
+    teamsSDK.audio.startMicrophoneAsync().then(() => {
+        micButton.innerHTML = 'Stop Microphone';
         micButton.disabled = false;
-      })
-      .catch(err => {
-        console.error("Failed to stop Teams SDK mic:", err);
+    }).catch(err => {
+        console.error("Teams start microphone error:", err);
         micButton.disabled = false;
-      });
-    return;
-  }
-
-  micButton.disabled = true;
-
-  teamsSDK.startMicrophone()
-    .then(() => {
-      micButton.innerHTML = 'Stop Microphone';
-      micButton.disabled = false;
-    })
-    .catch(err => {
-      console.error("Failed to start Teams SDK mic:", err);
-      micButton.disabled = false;
     });
 
-  teamsSDK.onRecognizedSpeech((userQuery) => {
-    if (userQuery.trim()) {
-      if (isSpeaking) stopSpeaking();
-      const transcriptionDiv = document.getElementById("transcriptionText");
-      transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-      transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-      handleUserQuery(userQuery);
-    }
-  });
+    // Use your original Speech SDK recognizer for processing user speech
+    speechRecognizer.recognized = async (s, e) => {
+        if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+            let userQuery = e.result.text.trim();
+            if (userQuery) {
+                if (isSpeaking) stopSpeaking();
+                const transcriptionDiv = document.getElementById("transcriptionText");
+                transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+                transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+                handleUserQuery(userQuery);
+            }
+        }
+    };
 };
+
 
 window.stopSpeaking = stopSpeaking;
