@@ -55,19 +55,7 @@ function checkSpeechSDK() {
   return true;
 }
 
-function htmlEncode(text) {
-  const entityMap = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-    '/': '&#x2F;'
-  };
-  return String(text).replace(/[&<>"'\/]/g, match => entityMap[match]);
-}
-
-// -------------------- Avatar Session --------------------
+// Connect to avatar service
 async function connectAvatar() {
   console.log("Starting avatar session...");
   document.getElementById('startSession').innerHTML = "Starting...";
@@ -75,7 +63,10 @@ async function connectAvatar() {
   document.getElementById('chatHistory').innerHTML = '<div class="system-message"><span>Session starting...</span></div>';
   document.getElementById('chatHistory').hidden = false;
 
-  if (!config) await loadConfig();
+  if (!config) {
+    await loadConfig();
+  }
+
   if (!checkSpeechSDK()) {
     document.getElementById('startSession').innerHTML = "Start Session";
     document.getElementById('startSession').disabled = false;
@@ -84,11 +75,10 @@ async function connectAvatar() {
   }
 
   try {
-    const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(config.cogSvcSubKey, config.cogSvcRegion);
+    const speechSynthesisConfig = SpeechSDK.SpeechConfig.fromSubscription(config.cogSvcSubKey, config.cogSvcRegion);
     const avatarConfig = new SpeechSDK.AvatarConfig(config.talkingAvatarCharacter, config.talkingAvatarStyle);
-    avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(speechConfig, avatarConfig);
-
-    avatarSynthesizer.avatarEventReceived = (s, e) => {
+    avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(speechSynthesisConfig, avatarConfig);
+    avatarSynthesizer.avatarEventReceived = function (s, e) {
       console.log(`Event received: ${e.description}, offset: ${e.offset / 10000}ms`);
     };
 
@@ -112,41 +102,51 @@ async function connectAvatar() {
     const xhr = new XMLHttpRequest();
     xhr.open("GET", `https://${config.cogSvcRegion}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1`);
     xhr.setRequestHeader("Ocp-Apim-Subscription-Key", config.cogSvcSubKey);
-    xhr.onreadystatechange = function () {
+    xhr.addEventListener("readystatechange", function () {
       if (this.readyState === 4) {
         if (this.status === 200) {
+          console.log("WebRTC token fetched.");
           const responseData = JSON.parse(this.responseText);
           setupWebRTC(responseData.Urls[0], responseData.Username, responseData.Password);
         } else {
           console.error(`Failed to fetch WebRTC token: ${this.status}`);
-          alert(`Failed to connect to avatar service. Check credentials.`);
-          resetSessionUI();
+          alert(`Failed to connect to avatar service. Status: ${this.status}. Check credentials.`);
+          document.getElementById('startSession').innerHTML = "Start Session";
+          document.getElementById('startSession').disabled = false;
+          document.getElementById('chatHistory').innerHTML = '<div class="system-message"><span>Failed to start session. Check console.</span></div>';
+          avatarSynthesizer = null;
         }
       }
-    };
+    });
     xhr.send();
   } catch (error) {
     console.error("Error initializing avatar:", error);
     alert("Failed to initialize avatar. Check console.");
-    resetSessionUI();
+    document.getElementById('startSession').innerHTML = "Start Session";
+    document.getElementById('startSession').disabled = false;
+    document.getElementById('chatHistory').innerHTML = '<div class="system-message"><span>Failed to start session. Check console.</span></div>';
   }
 }
 
+// Disconnect from avatar service
 function disconnectAvatar() {
   console.log("Disconnecting avatar session...");
-  if (avatarSynthesizer) avatarSynthesizer.close();
+  if (avatarSynthesizer) {
+    avatarSynthesizer.close();
+    avatarSynthesizer = null;
+  }
   if (speechRecognizer) {
     speechRecognizer.stopContinuousRecognitionAsync();
     speechRecognizer.close();
+    speechRecognizer = null;
   }
-  if (peerConnection) peerConnection.close();
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
   sessionActive = false;
   userClosedSession = true;
   pendingQueries = [];
-  resetSessionUI();
-}
-
-function resetSessionUI() {
   document.getElementById('microphone').disabled = true;
   document.getElementById('stopSession').disabled = true;
   document.getElementById('userMessageBox').disabled = true;
@@ -155,292 +155,331 @@ function resetSessionUI() {
   document.getElementById('startSession').disabled = false;
 }
 
-// -------------------- WebRTC --------------------
+// Setup WebRTC
 function setupWebRTC(iceServerUrl, iceServerUsername, iceServerCredential) {
   console.log("Setting up WebRTC...");
   peerConnection = new RTCPeerConnection({
     iceServers: [{ urls: [iceServerUrl], username: iceServerUsername, credential: iceServerCredential }]
   });
 
-  peerConnection.ontrack = (event) => {
-    const kind = event.track.kind;
-    const stream = event.streams[0];
-    let mediaElement;
-
-    if (kind === 'audio') {
-      mediaElement = document.createElement('audio');
-      mediaElement.autoplay = true;
-    } else if (kind === 'video') {
-      mediaElement = document.createElement('video');
-      mediaElement.autoplay = true;
-      mediaElement.playsInline = true;
-      mediaElement.style.width = '640px';
+  peerConnection.ontrack = function (event) {
+    if (event.track.kind === 'audio') {
+      let audioElement = document.createElement('audio');
+      audioElement.id = 'audioPlayer';
+      audioElement.srcObject = event.streams[0];
+      audioElement.autoplay = false;
+      audioElement.addEventListener('loadeddata', () => audioElement.play());
+      audioElement.onplaying = () => console.log(`WebRTC ${event.track.kind} channel connected.`);
+      let remoteVideoDiv = document.getElementById('remoteVideo');
+      for (let i = 0; i < remoteVideoDiv.childNodes.length; i++) {
+        if (remoteVideoDiv.childNodes[i].localName === event.track.kind) {
+          remoteVideoDiv.removeChild(remoteVideoDiv.childNodes[i]);
+        }
+      }
+      remoteVideoDiv.appendChild(audioElement);
     }
 
-    if (mediaElement) {
-      mediaElement.srcObject = stream;
-      mediaElement.id = `${kind}Player`;
-      const container = document.getElementById('remoteVideo');
-      Array.from(container.children).forEach(c => { if (c.localName === kind) container.removeChild(c); });
-      container.appendChild(mediaElement);
+    if (event.track.kind === 'video') {
+      let videoElement = document.createElement('video');
+      videoElement.id = 'videoPlayer';
+      videoElement.srcObject = event.streams[0];
+      videoElement.autoplay = false;
+      videoElement.addEventListener('loadeddata', () => videoElement.play());
+      videoElement.playsInline = true;
+      videoElement.style.width = '640px';
+      document.getElementById('remoteVideo').appendChild(videoElement);
 
-      if (kind === 'video') {
+      videoElement.onplaying = () => {
+        let remoteVideoDiv = document.getElementById('remoteVideo');
+        for (let i = 0; i < remoteVideoDiv.childNodes.length; i++) {
+          if (remoteVideoDiv.childNodes[i].localName === event.track.kind) {
+            remoteVideoDiv.removeChild(remoteVideoDiv.childNodes[i]);
+          }
+        }
+        videoElement.style.width = '640px';
+        remoteVideoDiv.appendChild(videoElement);
+        console.log(`WebRTC ${event.track.kind} channel connected.`);
         document.getElementById('microphone').disabled = false;
         document.getElementById('stopSession').disabled = false;
         document.getElementById('userMessageBox').disabled = false;
-        document.getElementById('chatHistory').innerHTML = '';
+        document.getElementById('chatHistory').innerHTML = ''; // Clear "Session starting..."
         document.getElementById('chatHistory').hidden = false;
-        sessionActive = true;
-        pendingQueries.forEach(q => handleUserQuery(q));
-        pendingQueries = [];
-      }
+        isReconnecting = false;
+        setTimeout(() => {
+          sessionActive = true;
+          console.log("Session active, processing pending queries:", pendingQueries);
+          while (pendingQueries.length > 0) {
+            handleUserQuery(pendingQueries.shift());
+          }
+        }, 300); // Reduced to 300ms
+      };
     }
   };
 
   peerConnection.addEventListener("datachannel", event => {
     peerConnectionDataChannel = event.channel;
-    peerConnectionDataChannel.onmessage = e => console.log(`[${(new Date()).toISOString()}] WebRTC event: ${e.data}`);
+    peerConnectionDataChannel.onmessage = e => {
+      console.log(`[${(new Date()).toISOString()}] WebRTC event: ${e.data}`);
+    };
   });
 
   peerConnection.createDataChannel("eventChannel");
-  peerConnection.oniceconnectionstatechange = () => console.log(`WebRTC status: ${peerConnection.iceConnectionState}`);
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log(`WebRTC status: ${peerConnection.iceConnectionState}`);
+  };
+
   peerConnection.addTransceiver('video', { direction: 'sendrecv' });
   peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
 
-  avatarSynthesizer.startAvatarAsync(peerConnection).then(r => {
+  avatarSynthesizer.startAvatarAsync(peerConnection).then((r) => {
     if (r.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-      console.log(`Avatar started. Result ID: ${r.resultId}`);
+      console.log(`[${(new Date()).toISOString()}] Avatar started. Result ID: ${r.resultId}`);
     } else {
-      console.error(`Unable to start avatar. Result ID: ${r.resultId}`);
-      resetSessionUI();
+      console.log(`[${(new Date()).toISOString()}] Unable to start avatar. Result ID: ${r.resultId}`);
+      document.getElementById('startSession').innerHTML = "Start Session";
+      document.getElementById('startSession').disabled = false;
+      document.getElementById('chatHistory').innerHTML = '<div class="system-message"><span>Failed to start session. Check console.</span></div>';
     }
-  }).catch(error => {
-    console.error(`Avatar failed to start: ${error}`);
+  }).catch((error) => {
+    console.error(`[${(new Date()).toISOString()}] Avatar failed to start: ${error}`);
     alert("Failed to start avatar. Check console.");
-    resetSessionUI();
+    document.getElementById('startSession').innerHTML = "Start Session";
+    document.getElementById('startSession').disabled = false;
+    document.getElementById('chatHistory').innerHTML = '<div class="system-message"><span>Failed to start session. Check console.</span></div>';
   });
 }
 
-// -------------------- Text + Speech --------------------
+// === Messages & Speech functions ===
 function initMessages() {
-  messages = [{ role: 'system', content: config.systemPrompt }];
+  messages = [{
+    role: 'system',
+    content: config.systemPrompt
+  }];
+}
+
+function htmlEncode(text) {
+  const entityMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;'
+  };
+  return String(text).replace(/[&<>"'\/]/g, match => entityMap[match]);
 }
 
 function speak(text, endingSilenceMs = 0) {
-  if (isSpeaking) { spokenTextQueue.push(text); return; }
+  if (isSpeaking) {
+    spokenTextQueue.push(text);
+    return;
+  }
   speakNext(text, endingSilenceMs);
 }
 
-function speakNext(text, endingSilenceMs = 0) {
-  let ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='${config.ttsVoice}'><mstts:leadingsilence-exact value='0'/>${htmlEncode(text)}${endingSilenceMs>0 ? `<break time='${endingSilenceMs}ms'/>` : ''}</voice></speak>`;
-
-  if (enableDisplayTextAlignmentWithSpeech) {
-    const chatHistory = document.getElementById('chatHistory');
-    chatHistory.innerHTML += `<div class="assistant-message"><span>${text.replace(/\n/g,'<br/>')}</span></div>`;
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+function speakNext(text, endingSilenceMs = 0, skipUpdatingChatHistory = false) {
+  let ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='${config.ttsVoice}'><mstts:leadingsilence-exact value='0'/>${htmlEncode(text)}</voice></speak>`;
+  if (endingSilenceMs > 0) {
+    ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='${config.ttsVoice}'><mstts:leadingsilence-exact value='0'/>${htmlEncode(text)}<break time='${endingSilenceMs}ms' /></voice></speak>`;
   }
 
+  if (enableDisplayTextAlignmentWithSpeech && !skipUpdatingChatHistory) {
+    let chatHistoryTextArea = document.getElementById('chatHistory');
+    chatHistoryTextArea.innerHTML += `<div class="assistant-message"><span>${text.replace(/\n/g, '<br/>')}</span></div>`;
+    chatHistoryTextArea.scrollTop = chatHistoryTextArea.scrollHeight;
+  }
+
+  lastSpeakTime = new Date();
   isSpeaking = true;
   speakingText = text;
   document.getElementById('stopSpeaking').disabled = false;
-
-  avatarSynthesizer.speakSsmlAsync(ssml).then(result => {
-    speakingText = '';
-    if (spokenTextQueue.length > 0) speakNext(spokenTextQueue.shift());
-    else { isSpeaking = false; document.getElementById('stopSpeaking').disabled = true; }
-  }).catch(error => {
-    console.error(`Error speaking SSML: ${error}`);
-    speakingText = '';
-    if (spokenTextQueue.length > 0) speakNext(spokenTextQueue.shift());
-    else { isSpeaking = false; document.getElementById('stopSpeaking').disabled = true; }
-  });
+  avatarSynthesizer.speakSsmlAsync(ssml).then(
+    (result) => {
+      if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+        console.log(`Speech synthesized for text [${text}]. Result ID: ${result.resultId}`);
+        lastSpeakTime = new Date();
+      } else {
+        console.log(`Error speaking SSML. Result ID: ${result.resultId}`);
+      }
+      speakingText = '';
+      if (spokenTextQueue.length > 0) {
+        speakNext(spokenTextQueue.shift());
+      } else {
+        isSpeaking = false;
+        document.getElementById('stopSpeaking').disabled = true;
+      }
+    }).catch((error) => {
+      console.error(`Error speaking SSML: ${error}`);
+      speakingText = '';
+      if (spokenTextQueue.length > 0) {
+        speakNext(spokenTextQueue.shift());
+      } else {
+        isSpeaking = false;
+        document.getElementById('stopSpeaking').disabled = true;
+      }
+    });
 }
 
 function stopSpeaking() {
+  lastInteractionTime = new Date();
   spokenTextQueue = [];
-  if (avatarSynthesizer) {
-    avatarSynthesizer.stopSpeakingAsync().then(() => {
-      isSpeaking = false;
-      document.getElementById('stopSpeaking').disabled = true;
-      console.log(`[${(new Date()).toISOString()}] Stop speaking request sent.`);
-    }).catch(err => console.error("Error stopping speaking:", err));
-  }
+  avatarSynthesizer.stopSpeakingAsync().then(() => {
+    isSpeaking = false;
+    document.getElementById('stopSpeaking').disabled = true;
+    console.log(`[${(new Date()).toISOString()}] Stop speaking request sent.`);
+  }).catch((error) => {
+    console.error(`Error stopping speaking: ${error}`);
+  });
 }
 
-// -------------------- User Query --------------------
+// === User query handling ===
 function handleUserQuery(userQuery) {
   console.log("Handling user query:", userQuery);
   if (!sessionActive) {
+    console.log("Session not active, queuing query:", userQuery);
     pendingQueries.push(userQuery);
-    document.getElementById('chatHistory').innerHTML = '<div class="system-message"><span>Session starting, query queued...</span></div>';
+    let chatHistoryTextArea = document.getElementById('chatHistory');
+    chatHistoryTextArea.innerHTML = '<div class="system-message"><span>Session starting, query queued...</span></div>';
     return;
   }
 
   lastInteractionTime = new Date();
-  messages.push({ role: 'user', content: userQuery });
+  let chatMessage = {
+    role: 'user',
+    content: userQuery
+  };
+  messages.push(chatMessage);
 
-  const chatHistory = document.getElementById('chatHistory');
-  chatHistory.innerHTML += `<div class="user-message"><span>${htmlEncode(userQuery)}</span></div>`;
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  let chatHistoryTextArea = document.getElementById('chatHistory');
+  chatHistoryTextArea.innerHTML += `<div class="user-message"><span>${htmlEncode(userQuery)}</span></div>`;
+  chatHistoryTextArea.scrollTop = chatHistoryTextArea.scrollHeight;
 
-  if (isSpeaking) stopSpeaking();
+  if (isSpeaking) {
+    stopSpeaking();
+  }
 
+  console.log("Sending request to /ask_agent...");
   fetch("https://avatar-v4ja.onrender.com/ask_agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: "demo-session", message: userQuery })
-  }).then(res => res.ok ? res.json() : res.text().then(txt => { throw new Error(txt); }))
-    .then(data => {
-      const assistantReply = data.text;
-      if (!assistantReply) return;
-
-      messages.push({ role: 'assistant', content: assistantReply });
-
-      let spokenSentence = '';
-      let displaySentence = '';
-      const tokens = assistantReply.split(/([.!?;:。？！：；])/);
-      tokens.forEach(token => {
-        spokenSentence += token; displaySentence += token;
-        if (sentenceLevelPunctuations.includes(token)) {
-          if (spokenSentence.trim()) speak(spokenSentence);
-          spokenSentence = '';
-          if (!enableDisplayTextAlignmentWithSpeech) {
-            chatHistory.innerHTML += `<div class="assistant-message"><span>${displaySentence.replace(/\n/g,'<br/>')}</span></div>`;
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-            displaySentence = '';
-          }
-        }
+    body: JSON.stringify({
+      session_id: "demo-session",
+      message: userQuery
+    })
+  })
+  .then(response => {
+    console.log("Received /ask_agent response, status:", response.status);
+    if (!response.ok) {
+      return response.text().then(text => {
+        throw new Error(`HTTP ${response.status}: ${text}`);
       });
-      if (spokenSentence.trim()) speak(spokenSentence);
-      if (!enableDisplayTextAlignmentWithSpeech && displaySentence) {
-        chatHistory.innerHTML += `<div class="assistant-message"><span>${displaySentence.replace(/\n/g,'<br/>')}</span></div>`;
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-      }
-    }).catch(err => {
-      console.error("Error from /ask_agent:", err);
-      alert(`Failed to get response: ${err.message}`);
-      chatHistory.innerHTML += `<div class="system-message"><span>Error: ${htmlEncode(err.message)}</span></div>`;
-      chatHistory.scrollTop = chatHistory.scrollHeight;
-    });
-}
-
-// -------------------- Microphone --------------------
-window.microphone = async () => {
-    lastInteractionTime = new Date();
-    const micButton = document.getElementById('microphone');
-
-    if (micButton.innerHTML === 'Stop Microphone') {
-        if (speechRecognizer) {
-            speechRecognizer.stopContinuousRecognitionAsync(
-                () => { micButton.innerHTML = '🎤 Mic'; micButton.disabled = false; },
-                err => { console.error(err); micButton.disabled = false; }
-            );
-        }
-        return;
     }
-
-    micButton.disabled = true;
-
-    try {
-        let stream;
-
-        if (typeof microsoftTeams !== 'undefined') {
-            // Teams iframe-specific microphone access
-            microsoftTeams.app.getUserMedia({ audio: true }, (mediaStream, error) => {
-                if (error || !mediaStream) {
-                    console.error("Teams getUserMedia error:", error);
-                    alert("Please allow microphone access in Teams.");
-                    micButton.disabled = false;
-                    return;
-                }
-                console.log("Teams microphone access granted", mediaStream);
-                startSpeechRecognition(mediaStream);
-            });
-        } else {
-            // Browser fallback
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.log("Browser microphone access granted", stream);
-            startSpeechRecognition(stream);
-        }
-
-    } catch (err) {
-        console.error("Mic access denied:", err);
-        alert("Please allow microphone access.");
-        micButton.disabled = false;
-        return;
+    return response.json();
+  })
+  .then(data => {
+    console.log("Parsed /ask_agent response:", data);
+    const assistantReply = data.text;
+    if (!assistantReply) {
+      console.error("Empty response from /ask_agent.");
+      return;
     }
-};
+    const transcriptionDiv = document.getElementById("transcriptionText");
+    transcriptionDiv.innerHTML += `<div><b>Agent:</b> ${htmlEncode(assistantReply)}<br></div><br>`;
+    transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
 
-// Helper function to start Speech SDK with the correct audio stream
-function startSpeechRecognition(stream) {
-    const micButton = document.getElementById('microphone');
-    speechRecognizer = new SpeechSDK.SpeechRecognizer(
-        SpeechSDK.SpeechConfig.fromSubscription(config.cogSvcSubKey, config.cogSvcRegion),
-        SpeechSDK.AudioConfig.fromStreamInput(stream)
-    );
-
-    speechRecognizer.startContinuousRecognitionAsync(
-        () => { micButton.innerHTML = 'Stop Microphone'; micButton.disabled = false; },
-        err => { console.error(err); micButton.disabled = false; }
-    );
-
-    speechRecognizer.recognized = (s, e) => {
-        if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-            let userQuery = e.result.text.trim();
-            if (userQuery) {
-                if (isSpeaking) stopSpeaking();
-                const transcriptionDiv = document.getElementById("transcriptionText");
-                transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-                transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-                handleUserQuery(userQuery);
-            }
-        }
+    let assistantMessage = {
+      role: 'assistant',
+      content: assistantReply 
     };
+    messages.push(assistantMessage);
+
+    let spokenSentence = '';
+    let displaySentence = '';
+    const tokens = assistantReply.split(/([.!?;:。？！：；])/);
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      displaySentence += token;
+      spokenSentence += token;
+      if (sentenceLevelPunctuations.includes(token)) {
+        if (spokenSentence.trim()) {
+          speak(spokenSentence);
+          spokenSentence = '';
+        }
+        if (!enableDisplayTextAlignmentWithSpeech) {
+          chatHistoryTextArea.innerHTML += `<div class="assistant-message"><span>${displaySentence.replace(/\n/g, '<br/>')}</span></div>`;
+          chatHistoryTextArea.scrollTop = chatHistoryTextArea.scrollHeight;
+          displaySentence = '';
+        }
+      }
+    }
+
+    if (spokenSentence.trim()) {
+      speak(spokenSentence);
+    }
+    if (!enableDisplayTextAlignmentWithSpeech && displaySentence) {
+      chatHistoryTextArea.innerHTML += `<div class="assistant-message"><span>${displaySentence.replace(/\n/g, '<br/>')}</span></div>`;
+      chatHistoryTextArea.scrollTop = chatHistoryTextArea.scrollHeight;
+    }
+  })
+  .catch(err => {
+    console.error("Error from /ask_agent:", err);
+    alert(`Failed to get response: ${err.message}`);
+    chatHistoryTextArea.innerHTML += `<div class="system-message"><span>Error: ${htmlEncode(err.message)}</span></div>`;
+    chatHistoryTextArea.scrollTop = chatHistoryTextArea.scrollHeight;
+  });
 }
 
-
-// -------------------- Toggle Chat --------------------
-window.toggleChat = () => {
-  const panel = document.getElementById("chatHistoryPanel");
-  const toggleBtn = document.getElementById("toggleChat");
-  if (panel.style.display === "none" || panel.style.display === "") {
-    panel.style.display = "block"; toggleBtn.textContent = "📝 Hide Transcriptions";
-  } else {
-    panel.style.display = "none"; toggleBtn.textContent = "📝 Show Transcriptions";
-  }
-};
-
-// -------------------- Live Caption --------------------
-function showLiveCaption(text) {
-  const captionDiv = document.getElementById("liveCaption");
-  captionDiv.textContent = text;
-  captionDiv.hidden = false;
-  clearTimeout(captionDiv._hideTimeout);
-  captionDiv._hideTimeout = setTimeout(() => { captionDiv.hidden = true; }, 4000);
-}
-
-// -------------------- Check Hung --------------------
+// === Hung session checker ===
 function checkHung() {
   let videoElement = document.getElementById('videoPlayer');
   if (videoElement && sessionActive) {
     let videoTime = videoElement.currentTime;
     setTimeout(() => {
       if (videoElement.currentTime === videoTime && sessionActive) {
-        console.log(`[${(new Date()).toISOString()}] Video disconnected, reconnecting...`);
         sessionActive = false;
-        if (peerConnectionDataChannel) peerConnectionDataChannel.onmessage = null;
-        if (avatarSynthesizer) avatarSynthesizer.close();
+        console.log(`[${(new Date()).toISOString()}] Video stream disconnected, reconnecting...`);
+        isReconnecting = true;
+        if (peerConnectionDataChannel) {
+          peerConnectionDataChannel.onmessage = null;
+        }
+        if (avatarSynthesizer) {
+          avatarSynthesizer.close();
+        }
         connectAvatar();
       }
     }, 2000);
   }
 }
 
-// -------------------- Window Events --------------------
+// === UI toggles ===
+function toggleChat() {
+  const panel = document.getElementById("chatHistoryPanel");
+  const toggleBtn = document.getElementById("toggleChat");
+  if (panel.style.display === "none" || panel.style.display === "") {
+    panel.style.display = "block";
+    toggleBtn.textContent = "📝 Hide Transcriptions";
+  } else {
+    panel.style.display = "none";
+    toggleBtn.textContent = "📝 Show Transcriptions";
+  }
+}
+
+function showLiveCaption(text) {
+  const captionDiv = document.getElementById("liveCaption");
+  captionDiv.textContent = text;
+  captionDiv.hidden = false;
+
+  clearTimeout(captionDiv._hideTimeout);
+  captionDiv._hideTimeout = setTimeout(() => {
+    captionDiv.hidden = true;
+  }, 4000);
+}
+
+// === Window events ===
 window.onload = async () => {
   await loadConfig();
   setInterval(checkHung, 2000);
-  document.getElementById('userMessageBox').addEventListener('keyup', e => {
+  document.getElementById('userMessageBox').addEventListener('keyup', (e) => {
     if (e.key === 'Enter') {
       const userQuery = document.getElementById('userMessageBox').value.trim();
       if (userQuery) {
@@ -454,6 +493,63 @@ window.onload = async () => {
   });
 };
 
-window.startSession = () => { lastInteractionTime = new Date(); userClosedSession = false; connectAvatar(); };
-window.stopSession = () => { lastInteractionTime = new Date(); userClosedSession = true; disconnectAvatar(); };
+window.startSession = () => {
+  lastInteractionTime = new Date();
+  userClosedSession = false;
+  connectAvatar();
+};
+
+window.stopSession = () => {
+  lastInteractionTime = new Date();
+  document.getElementById('microphone').disabled = true;
+  document.getElementById('stopSession').disabled = true;
+  document.getElementById('userMessageBox').disabled = true;
+  document.getElementById('chatHistory').hidden = true;
+  document.getElementById('startSession').innerHTML = "Start Session";
+  document.getElementById('startSession').disabled = false;
+  userClosedSession = true;
+  disconnectAvatar();
+};
+
+// === Teams SDK microphone integration ===
+window.microphone = () => {
+  lastInteractionTime = new Date();
+  const micButton = document.getElementById('microphone');
+
+  if (micButton.innerHTML === 'Stop Microphone') {
+    teamsSDK.stopMicrophone()
+      .then(() => {
+        micButton.innerHTML = '🎤 Mic';
+        micButton.disabled = false;
+      })
+      .catch(err => {
+        console.error("Failed to stop Teams SDK mic:", err);
+        micButton.disabled = false;
+      });
+    return;
+  }
+
+  micButton.disabled = true;
+
+  teamsSDK.startMicrophone()
+    .then(() => {
+      micButton.innerHTML = 'Stop Microphone';
+      micButton.disabled = false;
+    })
+    .catch(err => {
+      console.error("Failed to start Teams SDK mic:", err);
+      micButton.disabled = false;
+    });
+
+  teamsSDK.onRecognizedSpeech((userQuery) => {
+    if (userQuery.trim()) {
+      if (isSpeaking) stopSpeaking();
+      const transcriptionDiv = document.getElementById("transcriptionText");
+      transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+      transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+      handleUserQuery(userQuery);
+    }
+  });
+};
+
 window.stopSpeaking = stopSpeaking;
