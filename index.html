@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AI Hospitality Voice Assistant</title>
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
   <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+  <script src="https://statics.teams.cdn.office.net/sdk/v2.0.0/js/MicrosoftTeams.min.js"></script>
   <script src="chat.js" defer></script>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
  
@@ -834,74 +834,48 @@
   </div>
 
   <script>
-document.addEventListener('DOMContentLoaded', () => {
-
-  // -----------------------------
-  // Sidebar toggle functionality
-  // -----------------------------
-  function toggleSidebar() {
-    const appContainer = document.querySelector('.app-container');
-    const sidebarIcon = document.getElementById('sidebarToggleIcon');
-
-    if (appContainer.classList.contains('sidebar-collapsed')) {
-      appContainer.classList.remove('sidebar-collapsed');
-      sidebarIcon.textContent = '✕';
-    } else {
-      appContainer.classList.add('sidebar-collapsed');
-      sidebarIcon.textContent = '☰';
+    // Toggle sidebar functionality
+    function toggleSidebar() {
+      const appContainer = document.querySelector('.app-container');
+      const sidebarIcon = document.getElementById('sidebarToggleIcon');
+      
+      if (appContainer.classList.contains('sidebar-collapsed')) {
+        appContainer.classList.remove('sidebar-collapsed');
+        sidebarIcon.textContent = '✕';
+      } else {
+        appContainer.classList.add('sidebar-collapsed');
+        sidebarIcon.textContent = '☰';
+      }
     }
-  }
 
-  // Make toggleSidebar global so buttons can call it
-  window.toggleSidebar = toggleSidebar;
+    // Session state management for logo
+    function handleSessionStart() {
+      const avatarVideo = document.getElementById('remoteVideo');
+      avatarVideo.classList.add('session-active');
+    }
 
-  // -----------------------------
-  // Avatar session management
-  // -----------------------------
-  function handleSessionStart() {
-    const avatarVideo = document.getElementById('remoteVideo');
-    if (avatarVideo) avatarVideo.classList.add('session-active');
-  }
+    function handleSessionEnd() {
+      const avatarVideo = document.getElementById('remoteVideo');
+      avatarVideo.classList.remove('session-active');
+    }
 
-  function handleSessionEnd() {
-    const avatarVideo = document.getElementById('remoteVideo');
-    if (avatarVideo) avatarVideo.classList.remove('session-active');
-  }
-
-  // -----------------------------
-  // Safe overrides for start/stop session
-  // -----------------------------
-  if (typeof window.startSession === 'function') {
+    // Override existing functions to include logo management
     const originalStartSession = window.startSession;
-    window.startSession = function() {
-      handleSessionStart();
-      return originalStartSession.apply(this, arguments);
-    };
-  }
-
-  if (typeof window.stopSession === 'function') {
     const originalStopSession = window.stopSession;
-    window.stopSession = function() {
-      handleSessionEnd();
-      return originalStopSession.apply(this, arguments);
-    };
-  }
 
-  // -----------------------------
-  // Optional: global stopSpeaking function if not defined
-  // -----------------------------
-  if (typeof window.stopSpeaking !== 'function') {
-    window.stopSpeaking = function() {
-      console.warn('stopSpeaking() is not implemented yet.');
-    };
-  }
+    if (originalStartSession) {
+      window.startSession = function() {
+        handleSessionStart();
+        return originalStartSession.apply(this, arguments);
+      };
+    }
 
-});
-</script>
-
+    if (originalStopSession) {
+      window.stopSession = function() {
+        handleSessionEnd();
+        return originalStopSession.apply(this, arguments);
+      };
+    }
+  </script>
 </body>
 </html>
-
-
-
-
