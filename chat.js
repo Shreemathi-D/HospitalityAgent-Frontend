@@ -326,34 +326,78 @@ function handleUserQuery(userQuery) {
 
 // -------------------- Microphone --------------------
 window.microphone = async () => {
-  lastInteractionTime = new Date();
-  const micButton = document.getElementById('microphone');
+    lastInteractionTime = new Date();
+    const micButton = document.getElementById('microphone');
 
-  if (micButton.innerHTML === 'Stop Microphone') {
-    speechRecognizer.stopContinuousRecognitionAsync(() => { micButton.innerHTML = '🎤 Mic'; micButton.disabled = false; }, err => { console.error(err); micButton.disabled = false; });
-    return;
-  }
-
-  micButton.disabled = true;
-
-  try { await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch(err) { console.error("Mic access denied:", err); alert("Please allow microphone access."); micButton.disabled = false; return; }
-
-  speechRecognizer.startContinuousRecognitionAsync(() => { micButton.innerHTML = 'Stop Microphone'; micButton.disabled = false; }, err => { console.error(err); micButton.disabled = false; });
-
-  speechRecognizer.recognized = (s, e) => {
-    if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-      let userQuery = e.result.text.trim();
-      if (userQuery) {
-        if (isSpeaking) stopSpeaking();
-        const transcriptionDiv = document.getElementById("transcriptionText");
-        transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
-        transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
-        handleUserQuery(userQuery);
-      }
+    if (micButton.innerHTML === 'Stop Microphone') {
+        if (speechRecognizer) {
+            speechRecognizer.stopContinuousRecognitionAsync(
+                () => { micButton.innerHTML = '🎤 Mic'; micButton.disabled = false; },
+                err => { console.error(err); micButton.disabled = false; }
+            );
+        }
+        return;
     }
-  };
+
+    micButton.disabled = true;
+
+    try {
+        let stream;
+
+        if (typeof microsoftTeams !== 'undefined') {
+            // Teams iframe-specific microphone access
+            microsoftTeams.app.getUserMedia({ audio: true }, (mediaStream, error) => {
+                if (error || !mediaStream) {
+                    console.error("Teams getUserMedia error:", error);
+                    alert("Please allow microphone access in Teams.");
+                    micButton.disabled = false;
+                    return;
+                }
+                console.log("Teams microphone access granted", mediaStream);
+                startSpeechRecognition(mediaStream);
+            });
+        } else {
+            // Browser fallback
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("Browser microphone access granted", stream);
+            startSpeechRecognition(stream);
+        }
+
+    } catch (err) {
+        console.error("Mic access denied:", err);
+        alert("Please allow microphone access.");
+        micButton.disabled = false;
+        return;
+    }
 };
+
+// Helper function to start Speech SDK with the correct audio stream
+function startSpeechRecognition(stream) {
+    const micButton = document.getElementById('microphone');
+    speechRecognizer = new SpeechSDK.SpeechRecognizer(
+        SpeechSDK.SpeechConfig.fromSubscription(config.cogSvcSubKey, config.cogSvcRegion),
+        SpeechSDK.AudioConfig.fromStreamInput(stream)
+    );
+
+    speechRecognizer.startContinuousRecognitionAsync(
+        () => { micButton.innerHTML = 'Stop Microphone'; micButton.disabled = false; },
+        err => { console.error(err); micButton.disabled = false; }
+    );
+
+    speechRecognizer.recognized = (s, e) => {
+        if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+            let userQuery = e.result.text.trim();
+            if (userQuery) {
+                if (isSpeaking) stopSpeaking();
+                const transcriptionDiv = document.getElementById("transcriptionText");
+                transcriptionDiv.innerHTML += `<div><b>User:</b> ${htmlEncode(userQuery)}<br></div><br>`;
+                transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+                handleUserQuery(userQuery);
+            }
+        }
+    };
+}
+
 
 // -------------------- Toggle Chat --------------------
 window.toggleChat = () => {
